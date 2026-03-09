@@ -202,39 +202,39 @@ This explains the characteristic pattern:
 You can paste the following into a PlantUML‑compatible UML tool. It shows a **high‑level sequence** of the LDA data movement across the major blocks.
 
 ```plantuml
-@startuml
-title LDA Data-Path Flow (Fetch + Execute)
+  @startuml
+  title LDA Data-Path Flow (Fetch + Execute)
 
-actor Clock
-participant "PC" as PC
-participant "Reducer (RED)" as RED
-participant "Data Memory" as MEM
-participant "IR" as IR
-participant "Lower Zero Extender\n(LZE)" as LZE
-participant "Control Unit" as CU
-participant "DATA_MUX" as DMUX
-participant "A/B_MUX" as ABMUX
-participant "Register A" as A
+  actor Clock
+  participant "PC" as PC
+  participant "Reducer (RED)" as RED
+  participant "Data Memory" as MEM
+  participant "IR" as IR
+  participant "Lower Zero Extender\n(LZE)" as LZE
+  participant "Control Unit" as CU
+  participant "DATA_MUX" as DMUX
+  participant "A/B_MUX" as ABMUX
+  participant "Register A" as A
 
-== Fetch cycle ==
-Clock -> PC: present current PC value
-PC -> MEM: addr = PC
-CU -> MEM: EN=1, WEN=0 (read)
-MEM --> DMUX: MEM_OUT = M[PC]
-DMUX --> IR: LD_IR=1, IR <= MEM_OUT
-PC -> RED: PC value
-RED --> PC: PC+4, LD_PC=1
+  == Fetch cycle ==
+  Clock -> PC: present current PC value
+  PC -> MEM: addr = PC
+  CU -> MEM: EN=1, WEN=0 (read)
+  MEM --> DMUX: MEM_OUT = M[PC]
+  DMUX --> IR: LD_IR=1, IR <= MEM_OUT
+  PC -> RED: PC value
+  RED --> PC: PC+4, LD_PC=1
 
-== Execute cycle (LDA) ==
-IR --> LZE: IR[15..0]
-LZE --> MEM: addr = zero_extend(IR[15..0])
-CU -> MEM: EN=1, WEN=0 (read data)
-MEM --> DMUX: MEM_OUT = M[addr]
-DMUX --> ABMUX: select path to A
-ABMUX --> A: LD_A=1, A <= MEM_OUT
-CU -> PC: LD_PC=0 (PC holds)
+  == Execute cycle (LDA) ==
+  IR --> LZE: IR[15..0]
+  LZE --> MEM: addr = zero_extend(IR[15..0])
+  CU -> MEM: EN=1, WEN=0 (read data)
+  MEM --> DMUX: MEM_OUT = M[addr]
+  DMUX --> ABMUX: select path to A
+  ABMUX --> A: LD_A=1, A <= MEM_OUT
+  CU -> PC: LD_PC=0 (PC holds)
 
-@enduml
+  @enduml
 ```
 
 This diagram encodes the same story in a form you can visually inspect:
