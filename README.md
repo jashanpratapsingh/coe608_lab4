@@ -52,6 +52,28 @@ The Quartus project files (`4a.qpf`, `4a.qsf`, `4a.qws`) and simulation assets (
 
 ---
 
+## LDA Datapath and Waveforms (High‑Level Summary)
+
+For the CPU datapath portion of the course, the **LDA** instruction is documented in more detail in `LDA_datapath.md`. At a high level:
+
+- **Goal of LDA in this lab**:
+  - Copy one 32‑bit word from **data memory** into register `A`, using the **16‑bit address field** in the low bits of the instruction stored in `IR`.
+  - Formally: `A <= M[ IR[15..0] ]`, while `PC` only advances in the fetch cycle.
+
+- **Fetch cycle (Cycle N)** – bring the LDA instruction into `IR`:
+  - `addr = PC`, `EN = 1`, `WEN = 0` → memory outputs the **instruction word** at `M[PC]`.
+  - `DATA_MUX` selects memory, `LD_IR = 1` → `out_down/IR` steps to that 32‑bit instruction (for example, `0xABCD0010`).
+  - `RED` computes `PC + 4`, with `LD_PC = 1`, `INC_PC = 1` → `PC` moves to the next instruction; `out_down/A` is unchanged.
+
+- **Execute cycle (Cycle N+1)** – load from memory into `A`:
+  - `addr = zero_extend(IR[15..0])` → if `IR[15..0] = 0x0010` then `addr = 0x00000010`.
+  - `EN = 1`, `WEN = 0` → memory outputs the **data word** at that address (for example, `M[0x00000010] = 0xDEADBEEF`).
+  - `DATA_MUX` again selects memory, `A/B_MUX` targets `A`, `LD_A = 1` → `out_down/A` steps to `0xDEADBEEF` while `out_down/IR` stays at the LDA word.
+
+The full, step‑by‑step walkthrough (including all main control signals, the zero‑extenders, and a PlantUML diagram) lives in `LDA_datapath.md` and explains **why the Quartus waveforms look the way they do** for LDA.
+
+---
+
 ## `data_mem` VHDL Design – Detailed Explanation
 
 ### Entity Interface
