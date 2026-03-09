@@ -24,8 +24,9 @@ For LDA we assume the instruction has the form:
 
 - **Opcode**: `IR_OUT[31..16]`
 - **16‑bit address/immediate field**: `IR_OUT[15..0]`
-- **Semantic effect**:
-  - `A <= M[ IR[15..0] ]`
+- **Semantic effect / goal of LDA in this lab**:
+  - **Goal**: *copy one 32‑bit word from data memory into register `A`, using the 16‑bit address encoded in the instruction itself*.
+  - Formally: `A <= M[ IR[15..0] ]`.
   - `PC` is **not changed** in the execute cycle (it was already updated during fetch).
 
 This matches the presence of the **Lower Zero Extender (LZE)** hanging off the **low 16 bits** of `IR`.
@@ -276,3 +277,82 @@ So, when you look at the **waveform**:
 - The **first big step** on `out_down/IR` is when the LDA instruction is fetched from memory.
 - The **later big step** on `out_down/A` is when the memory data at `zero_extend(IR[15..0])` is read and loaded into A.
 - Between these events both signals appear **flat**, because their registers are not being written (`LD_IR = 0`, `LD_A = 0`), and nothing else in the datapath is allowed to overwrite them.
+
+---
+
+## 9. Full LDA Waveform Walk‑Through (All Key Signals)
+
+This section rewrites the LDA behavior **exactly like the waveform**: step‑by‑step, listing the main signals you see in the `.vwf`:
+
+- `clk` – clock.
+- `PC` – program counter.
+- `addr` – address into data memory.
+- `EN`, `WEN` – memory enable and write‑enable.
+- `MEM_OUT` / `data_out` – data memory output.
+- `DATA_BUS` (or equivalent) – internal 32‑bit bus.
+- `LD_IR`, `CLR_IR` – IR load / clear.
+- `LD_A`, `CLR_A` – A load / clear.
+- `REG_MUX`, `DATA_MUX`, `A/B_MUX` – mux selects for address, bus source, and destination register.
+- `out_down/IR` – IR output bus.
+- `out_down/A` – A register output bus.
+
+We assume a simple two‑cycle sequence: **Cycle N = fetch LDA**, **Cycle N+1 = execute LDA**.
+
+### 9.1 Cycle N – Fetch the LDA Instruction
+
+| Signal         | Value / behavior (during Cycle N)                                                                    | Reason / what changes it                                                                 |
+|----------------|------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------|
+| `PC`           | Holds current instruction address, then steps to `PC+4` at the clock edge                          | `RED` computes `PC+4`; control asserts `LD_PC=1, INC_PC=1` on this cycle.               |
+| `addr`         | Equals `PC`                                                                                          | `REG_MUX` selects the **PC path** as the memory address source.                         |
+| `EN`, `WEN`    | `EN=1`, `WEN=0`                                                                                      | Memory is enabled in **read** mode for instruction fetch.                               |
+| `MEM_OUT`      | Changes from prior data to `M[PC]`                                                                   | Data memory outputs the word stored at address `PC`.                                    |
+| `DATA_MUX`     | Select = memory                                                                                      | Control routes `MEM_OUT` onto `DATA_BUS`.                                               |
+| `DATA_BUS`     | Becomes the 32‑bit LDA instruction word                                                              | Follows `MEM_OUT` because of `DATA_MUX` selection.                                      |
+| `LD_IR`        | Pulled high **for this cycle’s active clock edge**                                                   | Control wants to capture the fetched instruction.                                       |
+| `out_down/IR`  | Steps from old value/`X` to the LDA instruction (opcode + 16‑bit address field)                      | IR register samples `DATA_BUS` when `LD_IR=1`.                                          |
+| `LD_A`         | `0` (not asserted)                                                                                   | A is not being written during instruction fetch.                                        |
+| `out_down/A`   | Flat (old A value)                                                                                   | No `LD_A` pulse, so A holds its previous content.                                       |
+
+On the **waveform** you literally see:
+
+- `addr` line matches the previous `PC`.
+- `MEM_OUT` and `out_down/IR` switch to a new 32‑bit word at the active edge.
+- `PC` jumps to `PC+4`.
+- `out_down/A` remains unchanged.
+
+### 9.2 Cycle N+1 – Execute LDA (Load from Memory to A)
+
+Now the instruction is already in IR; we use its **low 16 bits** as an address.
+
+| Signal         | Value / behavior (during Cycle N+1)                                                                 | Reason / what changes it                                                                                 |
+|----------------|-----------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|
+| `PC`           | Flat at `PC+4`                                                                                      | No branch/jump; control keeps `LD_PC=0`, `INC_PC=0`.                                                     |
+| `IR`           | Flat at LDA instruction word                                                                        | No new fetch; `LD_IR=0`.                                                                                |
+| `IR[15..0]`    | Constant 16‑bit address/immediate field                                                             | This is the encoded memory address for LDA.                                                             |
+| `addr`         | Steps from previous `PC` to `zero_extend(IR[15..0])`                                                | `LZE` zero‑extends `IR[15..0]` and `REG_MUX` now selects this immediate‑address path into memory.       |
+| `EN`, `WEN`    | `EN=1`, `WEN=0`                                                                                     | Memory is again enabled for a **read**, now for data, not instructions.                                 |
+| `MEM_OUT`      | Changes from prior instruction word to the memory data `M[ zero_extend(IR[15..0]) ]`               | With the new address and `EN=1,WEN=0`, data memory outputs the stored 32‑bit data word.                 |
+| `DATA_MUX`     | Select = memory                                                                                     | Control still wants `MEM_OUT` on `DATA_BUS` instead of any ALU result.                                  |
+| `DATA_BUS`     | Becomes that same data word `M[addr]`                                                               | Follows `MEM_OUT`.                                                                                       |
+| `A/B_MUX`      | Select = route bus into **A**                                                                       | Control configures the destination register as A.                                                       |
+| `LD_A`         | Pulled high on the active clock edge                                                                | This is the moment when A should capture the loaded memory data.                                        |
+| `out_down/A`   | Steps from its old value to the new data word `M[ zero_extend(IR[15..0]) ]`                         | Register A samples `DATA_BUS` when `LD_A=1`.                                                             |
+| `LD_IR`        | `0`                                                                                                 | IR not updated; stays holding the LDA instruction until the next fetch sequence starts.                 |
+| `out_down/IR`  | Flat (still the same LDA instruction word)                                                          | IR holds its value without change.                                                                      |
+
+On the **waveform** you now see:
+
+- `addr` line switch to a value that visually matches the zero‑extended `IR[15..0]`.
+- At the same or immediately following simulation step, `MEM_OUT` jumps to a new 32‑bit data word.
+- At the active clock edge with `LD_A=1`, `out_down/A` jumps to that exact data value.
+- `PC` and `out_down/IR` remain flat throughout this execute cycle.
+
+### 9.3 After LDA (Between Instructions)
+
+Until the next fetch:
+
+- `PC` stays at the next‑instruction address.
+- `IR` still shows the LDA word.
+- `A` holds the loaded memory value.
+
+Nothing changes again until control starts a new **fetch cycle** (asserting `LD_PC`/`INC_PC` and `LD_IR`) for the next instruction in the program.
