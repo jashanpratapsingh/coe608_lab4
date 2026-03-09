@@ -245,3 +245,34 @@ This diagram encodes the same story in a form you can visually inspect:
 
 That mapping is exactly what explains the shape of the **LDA waveforms** you see in simulation.
 
+---
+
+## 8. Waveform Outputs for `out_down/IR` and `out_down/A`
+
+In your Quartus waveform setup, the signals for this part of the lab are typically named:
+
+- `out_down/IR[31..0]` – the **instruction register output bus**.
+- `out_down/A[31..0]` – the **A register output bus**.
+
+They each show a **piecewise‑constant** 32‑bit word over time. The table below summarizes **what each value means**, **where it comes from**, and **what event causes the change** during LDA.
+
+> The exact hex values depend on how you initialized the instruction and data memories in your `.mif`/`.vwf` files; here we describe the *structure* of the values and why they change.
+
+| Time / phase            | Signal        | Typical value pattern                          | Where value comes from                                      | What causes this value (control / data flow)                                |
+|-------------------------|---------------|-----------------------------------------------|-------------------------------------------------------------|-------------------------------------------------------------------------------|
+| **Before fetch**        | `out_down/IR` | `XXXXXXXX` or previous instruction            | Old IR contents or unknown                                  | No load yet; `LD_IR = 0`.                                                     |
+|                         | `out_down/A`  | `00000000` or previous A value                | Old A register contents                                     | No LDA executed yet; `LD_A = 0`.                                             |
+| **Fetch cycle (LDA)**   | `out_down/IR` | **steps to the 32‑bit LDA instruction word**  | Data memory at address `PC` (`M[PC]`)                      | `EN=1, WEN=0`, `DATA_MUX` selects `MEM_OUT`, `LD_IR = 1` loads IR.           |
+|                         | `out_down/A`  | **unchanged** (flat)                          | Still the old A register contents                           | A is not written in the fetch cycle (`LD_A = 0`).                            |
+| **Execute LDA – start** | `out_down/IR` | **holds same LDA instruction word**           | IR register (latched last cycle)                            | Control keeps `LD_IR = 0`; no new instruction is fetched this cycle.         |
+|                         | `out_down/A`  | **still unchanged**                           | A register                                                   | Address is being prepared; `LD_A = 0` until read completes at the clock edge.|
+| **Execute LDA – read**  | `out_down/IR` | **still same instruction word**               | IR register                                                 | IR is only a source for LZE; it is not re‑written.                           |
+|                         | `out_down/A`  | **steps to the 32‑bit data word `M[addr]`**   | Data memory at address `addr = zero_extend(IR[15..0])`      | `EN=1, WEN=0` makes memory output `MEM_OUT`; `DATA_MUX` → bus; `LD_A = 1` loads A. |
+| **After execute (idle)**| `out_down/IR` | **flat at same LDA word until next fetch**    | IR register                                                 | Next instruction fetch will eventually change it with a new `LD_IR` pulse.   |
+|                         | `out_down/A`  | **flat at loaded data word**                  | A register                                                   | A holds its value while `LD_A = 0` and `CLR_A = 0`.                          |
+
+So, when you look at the **waveform**:
+
+- The **first big step** on `out_down/IR` is when the LDA instruction is fetched from memory.
+- The **later big step** on `out_down/A` is when the memory data at `zero_extend(IR[15..0])` is read and loaded into A.
+- Between these events both signals appear **flat**, because their registers are not being written (`LD_IR = 0`, `LD_A = 0`), and nothing else in the datapath is allowed to overwrite them.
